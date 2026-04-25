@@ -1,31 +1,123 @@
-<!-- frontend/index.html  (key parts) -->
-<div id="three-container"></div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Robot Navigation Visualizer</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
-<div id="controls">
-  <select id="algo">
-    <option value="astar">A*</option>
-    <option value="rrt">RRT</option>
-    <option value="rrt_star">RRT*</option>
-  </select>
-  <button id="run">Run</button>
-  <button id="random-obs">Random obstacles</button>
-  <div id="stats"></div>
+    #toolbar {
+      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+      background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0; flex-wrap: wrap;
+    }
+    #toolbar h1 { font-size: 14px; font-weight: 600; color: #fff; margin-right: 8px; white-space: nowrap; }
+
+    .seg { display: flex; border: 1px solid #444; border-radius: 8px; overflow: hidden; }
+    .seg button { background: transparent; border: none; color: #aaa; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+    .seg button.active { background: #7F77DD; color: #fff; font-weight: 600; }
+    .seg button:hover:not(.active) { background: #2a2a2a; }
+
+    button.action {
+      background: #7F77DD; color: #fff; border: none; border-radius: 8px;
+      padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    button.action:hover { background: #6a63cc; }
+    button.secondary {
+      background: transparent; color: #aaa; border: 1px solid #444; border-radius: 8px;
+      padding: 6px 12px; font-size: 12px; cursor: pointer;
+    }
+    button.secondary:hover { background: #2a2a2a; color: #fff; }
+
+    .mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; margin-left: auto; }
+    .mode-toggle button { padding: 5px 10px; }
+
+    #stats {
+      display: flex; gap: 20px; padding: 8px 16px;
+      background: #151515; border-bottom: 1px solid #2a2a2a; flex-shrink: 0;
+    }
+    .stat { display: flex; flex-direction: column; }
+    .stat-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-val { font-size: 18px; font-weight: 600; color: #fff; }
+
+    #hint { font-size: 11px; color: #555; padding: 0 16px; line-height: 2; flex-shrink: 0; }
+
+    #view-container { flex: 1; position: relative; overflow: hidden; }
+    #three-canvas { width: 100%; height: 100%; display: block; }
+    #canvas-2d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; cursor: crosshair; }
+
+    .legend {
+      position: absolute; bottom: 12px; right: 12px;
+      background: rgba(0,0,0,0.7); border: 1px solid #333; border-radius: 8px;
+      padding: 8px 12px; font-size: 11px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .legend-row { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+    #loading {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #111; font-size: 14px; color: #666; z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>Robot Nav</h1>
+
+  <div class="seg" id="algo-seg">
+    <button class="active" data-algo="astar">A*</button>
+    <button data-algo="rrt">RRT</button>
+    <button data-algo="rrt_star">RRT*</button>
+  </div>
+
+  <button class="action" id="run-btn">&#9654; Run</button>
+  <button class="secondary" id="clear-btn">Clear path</button>
+  <button class="secondary" id="random-btn">Random obstacles</button>
+  <button class="secondary" id="reset-btn">Reset map</button>
+
+  <div class="mode-toggle">
+    <span>View:</span>
+    <div class="seg" id="view-seg">
+      <button class="active" data-view="3d">3D</button>
+      <button data-view="2d">2D</button>
+    </div>
+  </div>
 </div>
 
-<script type="module">
-  import { initScene, buildGrid, connectAndPlan } from './main.js';
-  const ROWS=20, COLS=29;
-  let grid = Array.from({length:ROWS},()=>Array(COLS).fill(0));
-  const start=[10,1], goal=[10,COLS-2];
+<div id="stats">
+  <div class="stat"><div class="stat-label">Explored</div><div class="stat-val" id="s-explored">—</div></div>
+  <div class="stat"><div class="stat-label">Path length</div><div class="stat-val" id="s-length">—</div></div>
+  <div class="stat"><div class="stat-label">Path cost</div><div class="stat-val" id="s-cost">—</div></div>
+  <div class="stat"><div class="stat-label">Time (ms)</div><div class="stat-val" id="s-time">—</div></div>
+  <div class="stat"><div class="stat-label">Status</div><div class="stat-val" id="s-status" style="font-size:13px;padding-top:4px">Ready</div></div>
+</div>
 
-  initScene(document.getElementById('three-container'));
-  buildGrid(grid);
+<div id="hint">Click grid cells to toggle obstacles &nbsp;·&nbsp; Drag <span style="color:#1D9E75">S</span> or <span style="color:#D85A30">G</span> markers to reposition &nbsp;·&nbsp; Orbit: drag &nbsp;·&nbsp; Zoom: scroll</div>
 
-  document.getElementById('run').onclick = () => {
-    const algo = document.getElementById('algo').value;
-    connectAndPlan(grid, start, goal, algo, stats => {
-      document.getElementById('stats').textContent =
-        `Explored: ${stats.explored ?? '—'}  |  Length: ${stats.length ?? '—'}  |  ${stats.time ?? '—'} ms`;
-    });
-  };
-</script>
+<div id="view-container">
+  <div id="loading">Loading Three.js...</div>
+  <canvas id="three-canvas"></canvas>
+  <canvas id="canvas-2d"></canvas>
+
+  <div class="legend">
+    <div class="legend-row"><div class="legend-dot" style="background:#1D9E75"></div> Start</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#D85A30"></div> Goal</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#7F77DD"></div> Path</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#378ADD;opacity:.6"></div> Explored / edges</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#444"></div> Obstacle</div>
+  </div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
