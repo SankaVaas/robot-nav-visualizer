@@ -1,0 +1,31 @@
+<!-- frontend/index.html  (key parts) -->
+<div id="three-container"></div>
+
+<div id="controls">
+  <select id="algo">
+    <option value="astar">A*</option>
+    <option value="rrt">RRT</option>
+    <option value="rrt_star">RRT*</option>
+  </select>
+  <button id="run">Run</button>
+  <button id="random-obs">Random obstacles</button>
+  <div id="stats"></div>
+</div>
+
+<script type="module">
+  import { initScene, buildGrid, connectAndPlan } from './main.js';
+  const ROWS=20, COLS=29;
+  let grid = Array.from({length:ROWS},()=>Array(COLS).fill(0));
+  const start=[10,1], goal=[10,COLS-2];
+
+  initScene(document.getElementById('three-container'));
+  buildGrid(grid);
+
+  document.getElementById('run').onclick = () => {
+    const algo = document.getElementById('algo').value;
+    connectAndPlan(grid, start, goal, algo, stats => {
+      document.getElementById('stats').textContent =
+        `Explored: ${stats.explored ?? '—'}  |  Length: ${stats.length ?? '—'}  |  ${stats.time ?? '—'} ms`;
+    });
+  };
+</script>
